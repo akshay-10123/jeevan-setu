@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Volunteer Dashboard - Jeevan Setu</title>
+  <!-- Bootstrap CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Leaflet CSS for maps -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- Navbar -->
+  <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+    <div class="container-fluid">
+      <a class="navbar-brand" href="index.html">🌐 Jeevan Setu</a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navbarNav">
+        <ul class="navbar-nav ms-auto">
+          <li class="nav-item"><a class="nav-link" href="index.html">🏠 Home</a></li>
+          <li class="nav-item"><a class="nav-link" href="#requests">📋 Requests</a></li>
+          <li class="nav-item"><a class="nav-link" href="#map">🗺️ Map</a></li>
+          <li class="nav-item"><span class="nav-link" id="userInfo">Welcome, User</span></li>
+          <li class="nav-item"><button class="btn btn-outline-light btn-sm" onclick="logout()">Logout</button></li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <div class="container-fluid mt-4">
+    <div class="row">
+      <!-- Sidebar -->
+      <aside class="col-lg-3 mb-4">
+        <div class="card mb-3">
+          <div class="card-body text-center">
+            <div class="fs-1">👤</div>
+            <h5 class="card-title mt-2">Rajesh Kumar</h5>
+            <p class="card-text">Volunteer since 2023</p>
+            <div class="d-flex justify-content-around mt-3">
+              <div>
+                <h6>24</h6>
+                <small>Helped</small>
+              </div>
+              <div>
+                <h6>4.9</h6>
+                <small>Rating</small>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card mb-3">
+          <div class="card-body">
+            <h6>Quick Actions</h6>
+            <button id="availabilityBtn" class="btn btn-success w-100 mb-2" onclick="toggleAvailability()">
+              <span class="status-indicator online me-2"></span>Available for Help
+            </button>
+            <button class="btn btn-outline-primary w-100 mb-2" onclick="updateLocation()">📍 Update Location</button>
+            <button class="btn btn-outline-secondary w-100" onclick="showSettings()">⚙️ Settings</button>
+          </div>
+        </div>
+
+        <!-- Location Status -->
+        <div class="card mb-3">
+          <div class="card-body">
+            <h6>📍 Current Location</h6>
+            <div id="locationStatus">
+              <div class="text-muted small">Getting location...</div>
+            </div>
+            <div id="locationCoords" class="text-muted small mt-2" style="display: none;"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-body">
+            <h6>Filter Requests</h6>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" checked id="filterMedical">
+              <label class="form-check-label" for="filterMedical">Medical Emergency</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" checked id="filterFood">
+              <label class="form-check-label" for="filterFood">Food & Water</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" checked id="filterShelter">
+              <label class="form-check-label" for="filterShelter">Shelter</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" checked id="filterTransport">
+              <label class="form-check-label" for="filterTransport">Transportation</label>
+            </div>
+
+            <label class="form-label mt-3">Distance (km)</label>
+            <input type="range" class="form-range" min="1" max="50" value="10" id="distanceRange">
+            <div id="distanceValue">10 km</div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Main Content -->
+      <main class="col-lg-9">
+        <!-- Active Requests -->
+        <section id="requests" class="mb-4">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h2>📋 Active Requests Near You</h2>
+            <div class="btn-group">
+              <button class="btn btn-outline-primary active" data-view="list">List</button>
+              <button class="btn btn-outline-primary" data-view="map">Map</button>
+            </div>
+          </div>
+
+          <div id="requestsList">
+            <!-- Loading indicator -->
+            <div id="loadingIndicator" class="text-center py-4">
+              <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+              </div>
+              <p class="mt-2">Loading requests...</p>
+            </div>
+            
+            <!-- No requests message -->
+            <div id="noRequestsMessage" class="text-center py-5" style="display: none;">
+              <div class="card">
+                <div class="card-body">
+                  <h5>🎉 No Active Requests</h5>
+                  <p class="text-muted">All caught up! Check back later for new emergency requests.</p>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Dynamic request cards will be inserted here -->
+          </div>
+        </section>
+
+        <!-- Map Section -->
+        <section id="map" style="display: none;">
+          <div class="card">
+            <div class="card-body">
+              <h2>🗺️ Map View</h2>
+              <div id="mapContainer" class="mt-3" style="height: 500px; border-radius: 8px;"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Work History Section -->
+        <section id="workHistory" class="mt-4">
+          <div class="card">
+            <div class="card-header">
+              <h5 class="mb-0">📋 My Work History</h5>
+            </div>
+            <div class="card-body">
+              <div id="workHistoryList">
+                <!-- Work history will be loaded here -->
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <!-- Floating Action Button -->
+  <button class="btn btn-primary position-fixed bottom-0 end-0 m-4 rounded-circle" style="width:60px; height:60px;" onclick="scrollToTop()">↑</button>
+
+  <!-- Bootstrap JS & Dependencies -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <!-- Leaflet JS for maps -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="js/api.js"></script>
+  <script>
+    // Global variables
+    let allRequests = [];
+    let filteredRequests = [];
+    let isAvailable = true;
+    let currentLocation = null;
+    let map = null;
+    let mapMarkers = [];
+
+    // Check authentication
+    function checkAuth() {
+      const user = sessionStorage.getItem('user');
+      if (!user) {
+        window.location.href = 'login.html';
+        return false;
+      }
+      
+      const userData = JSON.parse(user);
+      if (userData.role !== 'volunteer') {
+        showNotification('Access denied. Volunteer role required.', 'danger');
+        setTimeout(() => window.location.href = 'login.html', 2000);
+        return false;
+      }
+      
+      // Show user info
+      document.getElementById('userInfo').textContent = `Welcome, ${userData.name}`;
+      return true;
+    }
+
+    // Logout function
+    function logout() {
+      sessionStorage.removeItem('user');
+      window.location.href = 'login.html';
+    }
+
+    // Initialize page
+    document.addEventListener('DOMContentLoaded', function() {
+      console.log('Page loaded, initializing...');
+      if (!checkAuth()) return;
+      getCurrentLocation();
+      createSampleData(); // Create sample data for testing
+      loadRequests();
+      loadWorkHistory();
+      setupEventListeners();
+    });
+
+    // Create sample data for testing
+    function createSampleData() {
+      const existingRequests = JSON.parse(localStorage.getItem('mockRequests') || '[]');
+      
+      if (existingRequests.length === 0) {
+        const sampleRequests = [
+          {
+            id: 1,
+            type: 'medical',
+            location: 'Mumbai, Maharashtra',
+            description: 'Need immediate medical assistance for elderly person',
+            contact: '+91-9876543210',
+            name: 'Priya Sharma',
+            priority: 'urgent',
+            status: 'pending',
+            timestamp: new Date(Date.now() - 30 * 60 * 1000).toISOString() // 30 minutes ago
+          },
+          {
+            id: 2,
+            type: 'rescue',
+            location: 'Delhi, Delhi',
+            description: 'Stuck in building collapse, need rescue team',
+            contact: '+91-9876543211',
+            name: 'Rajesh Kumar',
+            priority: 'high',
+            status: 'pending',
+            timestamp: new Date(Date.now() - 15 * 60 * 1000).toISOString() // 15 minutes ago
+          },
+          {
+            id: 3,
+            type: 'food',
+            location: 'Bangalore, Karnataka',
+            description: 'Need food and water for 10 people in shelter',
+            contact: '+91-9876543212',
+            name: 'Anita Patel',
+            priority: 'medium',
+            status: 'pending',
+            timestamp: new Date(Date.now() - 5 * 60 * 1000).toISOString() // 5 minutes ago
+          }
+        ];
+        
+        localStorage.setItem('mockRequests', JSON.stringify(sampleRequests));
+        console.log('Sample data created');
+      }
+    }
+
+    // Retry mechanism for failed requests
+    function retryLoadRequests() {
+      console.log('Retrying to load requests...');
+      loadRequests();
+    }
+
+    // Get current location
+    function getCurrentLocation() {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            currentLocation = {
+              lat: position.coords.latitude,
+              lng: position.coords.longitude
+            };
+            updateLocationStatus();
+            updateLocationOnServer();
+          },
+          (error) => {
+            console.error('Error getting location:', error);
+            updateLocationStatus('Location access denied. Please enable location services.');
+          }
+        );
+      } else {
+        updateLocationStatus('Geolocation is not supported by this browser.');
+      }
+    }
+
+    // Update location status display
+    function updateLocationStatus(message = null) {
+      const statusDiv = document.getElementById('locationStatus');
+      const coordsDiv = document.getElementById('locationCoords');
+      
+      if (message) {
+        statusDiv.innerHTML = `<div class="text-warning small">${message}</div>`;
+        coordsDiv.style.display = 'none';
+      } else if (currentLocation) {
+        statusDiv.innerHTML = `<div class="text-success small">✅ Location detected</div>`;
+        coordsDiv.innerHTML = `Lat: ${currentLocation.lat.toFixed(4)}, Lng: ${currentLocation.lng.toFixed(4)}`;
+        coordsDiv.style.display = 'block';
+      }
+    }
+
+    // Update location on server
+    async function updateLocationOnServer() {
+      if (!currentLocation) return;
+      
+      try {
+        const user = JSON.parse(sessionStorage.getItem('user'));
+        const response = await fetch('/api/users/profile', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${user.token}`
+          },
+          body: JSON.stringify({
+            location: {
+              type: 'Point',
+              coordinates: [currentLocation.lng, currentLocation.lat]
+            }
+          })
+        });
+        
+        if (response.ok) {
+          console.log('Location updated on server');
+        }
+      } catch (error) {
+        console.error('Error updating location on server:', error);
+      }
+    }
+
+    // Load nearby requests from backend
+    async function loadRequests() {
+      try {
+        console.log('Loading nearby requests...');
+        
+        // Try API first
+        try {
+          const user = JSON.parse(sessionStorage.getItem('user'));
+          if (user && user.token) {
+            const response = await fetch('/api/users/nearby-requests', {
+              headers: {
+                'Authorization': `Bearer ${user.token}`
+              }
+            });
+            
+            const data = await response.json();
+            console.log('API Response:', data);
+            
+            if (data && data.success) {
+              allRequests = data.data || [];
+              filteredRequests = [...allRequests];
+              console.log('Loaded requests:', allRequests);
+              displayRequests();
+              updateMap();
+              return;
+            }
+          }
+        } catch (apiError) {
+          console.log('API not available, using mock data');
+        }
+        
+        // Fallback to mock data
+        const mockRequests = JSON.parse(localStorage.getItem('mockRequests') || '[]');
+        allRequests = mockRequests;
+        filteredRequests = [...allRequests];
+        console.log('Loaded mock requests:', allRequests);
+        displayRequests();
+        updateMap();
+        
+      } catch (error) {
+        console.error('Error loading requests:', error);
+        showNotification('Failed to load requests. Using offline mode.', 'warning');
+        
+        // Add retry button
+        const container = document.getElementById('requestsList');
+        if (container) {
+          container.innerHTML = `
+            <div class="card">
+              <div class="card-body text-center">
+                <h5>⚠️ Offline Mode</h5>
+                <p class="text-muted">Server not available. Using cached data.</p>
+                <button class="btn btn-primary" onclick="retryLoadRequests()">Retry</button>
+              </div>
+            </div>
+          `;
+        }
+      } finally {
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        if (loadingIndicator) {
+          loadingIndicator.style.display = 'none';
+        }
+      }
+    }
+
+    // Load work history
+    async function loadWorkHistory() {
+      try {
+        // Try API first
+        try {
+          const user = JSON.parse(sessionStorage.getItem('user'));
+          if (user && user.token) {
+            const response = await fetch('/api/users/profile', {
+              headers: {
+                'Authorization': `Bearer ${user.token}`
+              }
+            });
+            
+            const data = await response.json();
+            if (data.success && data.data.workHistory) {
+              displayWorkHistory(data.data.workHistory);
+              return;
+            }
+          }
+        } catch (apiError) {
+          console.log('API not available, using mock data');
+        }
+        
+        // Fallback to mock data
+        const workHistory = JSON.parse(localStorage.getItem('volunteerWorkHistory') || '[]');
+        displayWorkHistory(workHistory);
+        
+      } catch (error) {
+        console.error('Error loading work history:', error);
+      }
+    }
+
+    // Display work history
+    function displayWorkHistory(workHistory) {
+      const container = document.getElementById('workHistoryList');
+      
+      if (workHistory.length === 0) {
+        container.innerHTML = '<p class="text-muted">No completed work yet.</p>';
+        return;
+      }
+      
+      container.innerHTML = workHistory.map(work => `
+        <div class="card mb-2">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center">
+              <div>
+                <h6 class="mb-1">Request #${work.requestId}</h6>
+                <small class="text-muted">${formatTimestamp(work.acceptedAt)}</small>
+              </div>
+              <span class="badge ${work.status === 'completed' ? 'bg-success' : 'bg-warning'}">
+                ${work.status.toUpperCase()}
+              </span>
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // Display requests
+    function displayRequests() {
+      const container = document.getElementById('requestsList');
+      const noRequestsMsg = document.getElementById('noRequestsMessage');
+      
+      if (!container) {
+        console.error('Container element not found');
+        return;
+      }
+      
+      console.log('Displaying requests:', filteredRequests);
+      
+      if (filteredRequests.length === 0) {
+        if (noRequestsMsg) {
+          noRequestsMsg.style.display = 'block';
+        }
+        container.innerHTML = '';
+        return;
+      }
+      
+      if (noRequestsMsg) {
+        noRequestsMsg.style.display = 'none';
+      }
+      
+      container.innerHTML = filteredRequests.map(request => {
+        console.log('Rendering request:', request);
+        return `
+          <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between">
+              <span class="badge ${getPriorityBadge(request.priority || 'medium')}">${(request.priority || 'medium').toUpperCase()}</span>
+              <small>${formatTimestamp(request.timestamp)}</small>
+            </div>
+            <div class="card-body">
+              <h5>${getEmergencyIcon(request.type)} ${getEmergencyTypeName(request.type)}</h5>
+              <p><strong>${request.name || 'Anonymous'}</strong> - ${request.description}</p>
+              <p>📍 ${request.location}</p>
+              <div class="d-flex gap-3">
+                <span>Type: ${request.type}</span>
+                <span>Status: ${request.status}</span>
+                <span>Contact: ${request.contact}</span>
+              </div>
+              <div class="mt-3">
+                ${request.status === 'pending' ? 
+                  `<button class="btn btn-primary me-2" onclick="acceptRequest(${request.id})" id="acceptBtn${request.id}">
+                    <span class="spinner-border spinner-border-sm d-none" id="spinner${request.id}"></span>
+                    Accept Request
+                  </button>` : 
+                  request.status === 'assigned' ? 
+                    `<button class="btn btn-success me-2" onclick="completeRequest(${request.id})" id="completeBtn${request.id}">
+                      Complete Request
+                    </button>` :
+                    `<span class="badge ${request.status === 'completed' ? 'bg-success' : 'bg-secondary'}">${request.status.toUpperCase()}</span>`
+                }
+                <button class="btn btn-outline-secondary" onclick="viewRequestDetails(${request.id})">View Details</button>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // Get emergency type icon
+    function getEmergencyIcon(type) {
+      const icons = {
+        'medical': '🏥',
+        'rescue': '🚨',
+        'food': '🍞',
+        'shelter': '🏠',
+        'transport': '🚗',
+        'other': '⚠️'
+      };
+      return icons[type] || '⚠️';
+    }
+
+    // Get emergency type name
+    function getEmergencyTypeName(type) {
+      const names = {
+        'medical': 'Medical Emergency',
+        'rescue': 'Rescue Required',
+        'food': 'Food & Water',
+        'shelter': 'Shelter',
+        'transport': 'Transportation',
+        'other': 'Other'
+      };
+      return names[type] || 'Emergency';
+    }
+
+    // Setup event listeners
+    function setupEventListeners() {
+      // Distance slider
+      const range = document.getElementById('distanceRange');
+      const value = document.getElementById('distanceValue');
+      range.addEventListener('input', () => {
+        value.textContent = range.value + ' km';
+        filterRequests();
+      });
+
+      // Filter checkboxes
+      document.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
+        checkbox.addEventListener('change', filterRequests);
+      });
+
+      // View toggle
+      document.querySelectorAll('.btn-group button').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.btn-group button').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          if (btn.dataset.view === 'map') {
+            document.getElementById('requests').style.display = 'none';
+            document.getElementById('map').style.display = 'block';
+            // Initialize map if not already done
+            setTimeout(() => {
+              initializeMap();
+              updateMap();
+            }, 100);
+          } else {
+            document.getElementById('requests').style.display = 'block';
+            document.getElementById('map').style.display = 'none';
+          }
+        });
+      });
+    }
+
+    // Filter requests based on criteria
+    function filterRequests() {
+      const distance = parseInt(document.getElementById('distanceRange').value);
+      const medicalChecked = document.getElementById('filterMedical').checked;
+      const foodChecked = document.getElementById('filterFood').checked;
+      const shelterChecked = document.getElementById('filterShelter').checked;
+      const transportChecked = document.getElementById('filterTransport').checked;
+
+      filteredRequests = allRequests.filter(request => {
+        // Type filtering
+        const typeMatch = 
+          (request.type === 'medical' && medicalChecked) ||
+          (request.type === 'food' && foodChecked) ||
+          (request.type === 'shelter' && shelterChecked) ||
+          (request.type === 'transport' && transportChecked) ||
+          (!['medical', 'food', 'shelter', 'transport'].includes(request.type));
+
+        // Only show pending requests for volunteers to accept
+        return typeMatch && request.status === 'pending';
+      });
+
+      console.log('Filtered requests:', filteredRequests);
+      displayRequests();
+    }
+
+    // Accept request
+    async function acceptRequest(id) {
+      console.log('Accepting request with ID:', id);
+      
+      // Show loading state
+      const acceptBtn = document.getElementById(`acceptBtn${id}`);
+      const spinner = document.getElementById(`spinner${id}`);
+      
+      if (acceptBtn && spinner) {
+        acceptBtn.disabled = true;
+        spinner.classList.remove('d-none');
+      }
+      
+      try {
+        // Try API first
+        try {
+          const user = JSON.parse(sessionStorage.getItem('user'));
+          if (user && user.token) {
+            const response = await fetch(`/api/users/accept-request/${id}`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${user.token}`
+              }
+            });
+            
+            const data = await response.json();
+            console.log('API Response:', data);
+            
+            if (data.success) {
+              showNotification('Request accepted! Contact details will be shared shortly.', 'success');
+              loadRequests(); // Refresh the list
+              loadWorkHistory(); // Refresh work history
+              return;
+            }
+          }
+        } catch (apiError) {
+          console.log('API not available, using mock data');
+        }
+        
+        // Fallback to mock data
+        const mockRequests = JSON.parse(localStorage.getItem('mockRequests') || '[]');
+        const requestIndex = mockRequests.findIndex(req => req.id == id);
+        
+        if (requestIndex !== -1) {
+          // Update request status
+          mockRequests[requestIndex].status = 'assigned';
+          mockRequests[requestIndex].assignedVolunteer = 'Current Volunteer';
+          mockRequests[requestIndex].assignedAt = new Date().toISOString();
+          
+          // Save back to localStorage
+          localStorage.setItem('mockRequests', JSON.stringify(mockRequests));
+          
+          // Add to volunteer work history
+          const workHistory = JSON.parse(localStorage.getItem('volunteerWorkHistory') || '[]');
+          workHistory.push({
+            requestId: id,
+            status: 'accepted',
+            acceptedAt: new Date().toISOString()
+          });
+          localStorage.setItem('volunteerWorkHistory', JSON.stringify(workHistory));
+          
+          showNotification('Request accepted! (Offline mode)', 'success');
+          loadRequests(); // Refresh the list
+          loadWorkHistory(); // Refresh work history
+        } else {
+          showNotification('Request not found', 'danger');
+        }
+        
+      } catch (error) {
+        console.error('Error accepting request:', error);
+        showNotification('Failed to accept request. Please try again.', 'danger');
+      } finally {
+        // Hide loading state
+        if (acceptBtn && spinner) {
+          acceptBtn.disabled = false;
+          spinner.classList.add('d-none');
+        }
+      }
+    }
+
+    // Complete request
+    async function completeRequest(id) {
+      try {
+        // Try API first
+        try {
+          const user = JSON.parse(sessionStorage.getItem('user'));
+          if (user && user.token) {
+            const response = await fetch(`/api/users/complete-request/${id}`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${user.token}`
+              }
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+              showNotification('Request completed successfully!', 'success');
+              loadRequests();
+              loadWorkHistory();
+              return;
+            }
+          }
+        } catch (apiError) {
+          console.log('API not available, using mock data');
+        }
+        
+        // Fallback to mock data
+        const mockRequests = JSON.parse(localStorage.getItem('mockRequests') || '[]');
+        const requestIndex = mockRequests.findIndex(req => req.id == id);
+        
+        if (requestIndex !== -1) {
+          // Update request status
+          mockRequests[requestIndex].status = 'completed';
+          mockRequests[requestIndex].completedAt = new Date().toISOString();
+          
+          // Calculate time to resolve
+          const createdTime = new Date(mockRequests[requestIndex].timestamp);
+          const completedTime = new Date();
+          const timeToResolve = Math.round((completedTime - createdTime) / (1000 * 60)); // in minutes
+          mockRequests[requestIndex].timeToResolve = timeToResolve;
+          
+          // Save back to localStorage
+          localStorage.setItem('mockRequests', JSON.stringify(mockRequests));
+          
+          // Update volunteer work history
+          const workHistory = JSON.parse(localStorage.getItem('volunteerWorkHistory') || '[]');
+          const workIndex = workHistory.findIndex(work => work.requestId == id);
+          if (workIndex !== -1) {
+            workHistory[workIndex].status = 'completed';
+            workHistory[workIndex].completedAt = new Date().toISOString();
+            localStorage.setItem('volunteerWorkHistory', JSON.stringify(workHistory));
+          }
+          
+          showNotification('Request completed successfully! (Offline mode)', 'success');
+          loadRequests();
+          loadWorkHistory();
+        } else {
+          showNotification('Request not found', 'danger');
+        }
+        
+      } catch (error) {
+        console.error('Error completing request:', error);
+        showNotification('Failed to complete request.', 'danger');
+      }
+    }
+
+    // Initialize map
+    function initializeMap() {
+      if (map) return; // Map already initialized
+      
+      const mapContainer = document.getElementById('mapContainer');
+      if (!mapContainer) return;
+      
+      // Default to Mumbai if no location
+      const defaultLat = currentLocation?.lat || 19.0760;
+      const defaultLng = currentLocation?.lng || 72.8777;
+      
+      map = L.map('mapContainer').setView([defaultLat, defaultLng], 12);
+      
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors'
+      }).addTo(map);
+      
+      // Add volunteer location marker
+      if (currentLocation) {
+        L.marker([currentLocation.lat, currentLocation.lng])
+          .addTo(map)
+          .bindPopup('Your Location')
+          .openPopup();
+      }
+    }
+
+    // Update map with requests
+    function updateMap() {
+      if (!map) {
+        initializeMap();
+        return;
+      }
+      
+      // Clear existing markers
+      mapMarkers.forEach(marker => map.removeLayer(marker));
+      mapMarkers = [];
+      
+      // Add request markers
+      filteredRequests.forEach(request => {
+        if (request.location && request.location.coordinates) {
+          const [lng, lat] = request.location.coordinates;
+          const marker = L.marker([lat, lng])
+            .addTo(map)
+            .bindPopup(`
+              <div>
+                <h6>${getEmergencyTypeName(request.type)}</h6>
+                <p><strong>Priority:</strong> ${request.priority}</p>
+                <p><strong>Description:</strong> ${request.description.substring(0, 100)}...</p>
+                <p><strong>Contact:</strong> ${request.contact}</p>
+                <button class="btn btn-sm btn-primary" onclick="acceptRequest('${request._id}')">
+                  Accept Request
+                </button>
+              </div>
+            `);
+          mapMarkers.push(marker);
+        }
+      });
+    }
+
+    // Update location
+    function updateLocation() {
+      getCurrentLocation();
+    }
+
+    // Show settings
+    function showSettings() {
+      alert('Settings functionality coming soon!');
+    }
+
+    // View request details
+    function viewRequestDetails(id) {
+      const request = allRequests.find(r => r.id === id);
+      if (request) {
+        alert(`Request Details:\n\nType: ${request.type}\nLocation: ${request.location}\nDescription: ${request.description}\nContact: ${request.contact}\nStatus: ${request.status}`);
+      }
+    }
+
+    // Toggle availability
+    function toggleAvailability() {
+      const btn = document.getElementById('availabilityBtn');
+      isAvailable = !isAvailable;
+      
+      if (isAvailable) {
+        btn.classList.remove('btn-danger');
+        btn.classList.add('btn-success');
+        btn.innerHTML = '<span class="status-indicator online me-2"></span>Available for Help';
+        showNotification('You are now available to help!', 'success');
+      } else {
+        btn.classList.remove('btn-success');
+        btn.classList.add('btn-danger');
+        btn.innerHTML = '<span class="status-indicator offline me-2"></span>Unavailable';
+        showNotification('You are now unavailable.', 'warning');
+      }
+    }
+
+    // Scroll to top
+    function scrollToTop() {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    // Auto-refresh requests every 30 seconds
+    setInterval(loadRequests, 30000);
+  </script>
+</body>
+</html>

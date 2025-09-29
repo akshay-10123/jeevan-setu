@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jeevan Setu - Victim Portal</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+
+  <!-- Navbar -->
+  <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+    <div class="container">
+      <a class="navbar-brand" href="index.html">Jeevan Setu</a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navbarNav">
+        <ul class="navbar-nav ms-auto">
+          <li class="nav-item"><a class="nav-link active" href="#">Victim Portal</a></li>
+          <li class="nav-item"><span class="nav-link" id="userInfo">Welcome, User</span></li>
+          <li class="nav-item"><button class="btn btn-outline-light btn-sm" onclick="logout()">Logout</button></li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <section class="py-5">
+    <div class="container">
+      <h2 class="mb-4 text-center">Submit an Emergency Request</h2>
+      <form id="emergencyForm" class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label">Full Name *</label>
+          <input type="text" id="victimName" class="form-control" placeholder="Your Name" required>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Contact Number *</label>
+          <input type="tel" id="victimContact" class="form-control" placeholder="Phone Number" required>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Emergency Type *</label>
+          <select id="emergencyType" class="form-select" required>
+            <option value="">Select Type</option>
+            <option value="medical">Medical Emergency</option>
+            <option value="rescue">Rescue Required</option>
+            <option value="food">Food & Water</option>
+            <option value="shelter">Shelter</option>
+            <option value="transport">Transportation</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Priority Level *</label>
+          <select id="priority" class="form-select" required>
+            <option value="">Select Priority</option>
+            <option value="urgent">Urgent (Life-threatening)</option>
+            <option value="high">High (Critical)</option>
+            <option value="medium">Medium (Important)</option>
+            <option value="low">Low (Can wait)</option>
+          </select>
+        </div>
+        <div class="col-md-12">
+          <label class="form-label">Location *</label>
+          <input type="text" id="location" class="form-control" placeholder="City / Address / Landmark" required>
+        </div>
+        <div class="col-md-12">
+          <label class="form-label">Emergency Details *</label>
+          <textarea id="description" class="form-control" rows="4" placeholder="Describe your situation in detail" required></textarea>
+        </div>
+        <div class="col-12 text-center">
+          <button type="submit" class="btn btn-danger btn-lg">
+            <span id="submitSpinner" class="spinner-border spinner-border-sm d-none" role="status"></span>
+            Submit Emergency Request
+          </button>
+        </div>
+      </form>
+      
+      <!-- Request Status Section -->
+      <div id="requestStatus" class="mt-5" style="display: none;">
+        <div class="card">
+          <div class="card-header bg-success text-white">
+            <h5 class="mb-0">✅ Request Submitted Successfully!</h5>
+          </div>
+          <div class="card-body">
+            <p><strong>Request ID:</strong> <span id="requestId"></span></p>
+            <p><strong>Status:</strong> <span class="badge bg-warning">Pending</span></p>
+            <p><strong>Submitted at:</strong> <span id="submissionTime"></span></p>
+            <p class="text-muted">A volunteer will contact you shortly. Keep your phone nearby!</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- My Requests Dashboard -->
+      <div class="mt-5">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+          <h3>My Emergency Requests</h3>
+          <button class="btn btn-outline-primary" onclick="loadMyRequests()">
+            <span id="refreshSpinner" class="spinner-border spinner-border-sm d-none"></span>
+            Refresh
+          </button>
+        </div>
+        
+        <div id="requestsList" class="row g-4">
+          <!-- Requests will be loaded here -->
+        </div>
+        
+        <div id="noRequests" class="text-center py-5" style="display: none;">
+          <div class="fs-1 mb-3">📝</div>
+          <h5>No requests yet</h5>
+          <p class="text-muted">Submit your first emergency request using the form above.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="py-3 bg-dark text-white text-center">
+    <div class="container">
+      <p>&copy; 2025 Jeevan Setu.</p>
+    </div>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="js/api.js"></script>
+  <script>
+    // Check authentication
+    function checkAuth() {
+      const user = sessionStorage.getItem('user');
+      if (!user) {
+        window.location.href = 'login.html';
+        return false;
+      }
+      
+      const userData = JSON.parse(user);
+      if (userData.role !== 'victim') {
+        showNotification('Access denied. Victim role required.', 'danger');
+        setTimeout(() => window.location.href = 'login.html', 2000);
+        return false;
+      }
+      
+      // Show user info
+      document.getElementById('userInfo').textContent = `Welcome, ${userData.name}`;
+      return true;
+    }
+
+    // Logout function
+    function logout() {
+      sessionStorage.removeItem('user');
+      window.location.href = 'login.html';
+    }
+
+    // Initialize page
+    document.addEventListener('DOMContentLoaded', function() {
+      if (!checkAuth()) return;
+      loadMyRequests();
+    });
+
+    // Load user's requests
+    async function loadMyRequests() {
+      try {
+        const refreshBtn = document.querySelector('button[onclick="loadMyRequests()"]');
+        const spinner = document.getElementById('refreshSpinner');
+        
+        refreshBtn.disabled = true;
+        spinner.classList.remove('d-none');
+        
+        // Try to get requests from API first
+        try {
+          const user = JSON.parse(sessionStorage.getItem('user'));
+          if (user && user.token) {
+            const response = await fetch('/api/users/my-requests', {
+              headers: {
+                'Authorization': `Bearer ${user.token}`
+              }
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+              displayRequests(data.data);
+              return;
+            }
+          }
+        } catch (apiError) {
+          console.log('API not available, using mock data');
+        }
+        
+        // Fallback to mock data
+        const mockRequests = JSON.parse(localStorage.getItem('mockRequests') || '[]');
+        displayRequests(mockRequests);
+        
+      } catch (error) {
+        console.error('Error loading requests:', error);
+        showNotification('Failed to load requests', 'danger');
+      } finally {
+        const refreshBtn = document.querySelector('button[onclick="loadMyRequests()"]');
+        const spinner = document.getElementById('refreshSpinner');
+        refreshBtn.disabled = false;
+        spinner.classList.add('d-none');
+      }
+    }
+
+    // Display requests in the dashboard
+    function displayRequests(requests) {
+      const requestsList = document.getElementById('requestsList');
+      const noRequests = document.getElementById('noRequests');
+      
+      if (requests.length === 0) {
+        requestsList.style.display = 'none';
+        noRequests.style.display = 'block';
+        return;
+      }
+      
+      requestsList.style.display = 'block';
+      noRequests.style.display = 'none';
+      
+      requestsList.innerHTML = requests.map(request => {
+        const statusBadge = getStatusBadge(request.status);
+        const priorityBadge = getPriorityBadge(request.priority);
+        const timeToResolve = request.timeToResolve ? 
+          `${request.timeToResolve} minutes` : 'N/A';
+        
+        return `
+          <div class="col-md-6 col-lg-4">
+            <div class="card h-100">
+              <div class="card-header d-flex justify-content-between align-items-center">
+                <span class="badge ${statusBadge}">${request.status.toUpperCase()}</span>
+                <span class="badge ${priorityBadge}">${request.priority.toUpperCase()}</span>
+              </div>
+              <div class="card-body">
+                <h6 class="card-title">${request.type.charAt(0).toUpperCase() + request.type.slice(1)} Emergency</h6>
+                <p class="card-text">${request.description.substring(0, 100)}${request.description.length > 100 ? '...' : ''}</p>
+                <p class="text-muted small">
+                  <strong>Location:</strong> ${request.address}<br>
+                  <strong>Submitted:</strong> ${formatTimestamp(request.createdAt)}<br>
+                  ${request.assignedVolunteer ? `<strong>Assigned to:</strong> ${request.assignedVolunteer.name}<br>` : ''}
+                  ${request.timeToResolve ? `<strong>Resolved in:</strong> ${timeToResolve}<br>` : ''}
+                </p>
+              </div>
+              <div class="card-footer">
+                <small class="text-muted">Request ID: #${request._id}</small>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // Get status badge class
+    function getStatusBadge(status) {
+      const badges = {
+        'pending': 'bg-warning text-dark',
+        'assigned': 'bg-info text-dark',
+        'in_progress': 'bg-primary',
+        'completed': 'bg-success',
+        'cancelled': 'bg-secondary'
+      };
+      return badges[status] || 'bg-secondary';
+    }
+
+    // Handle form submission
+    document.getElementById('emergencyForm').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      
+      const submitBtn = document.querySelector('button[type="submit"]');
+      const spinner = document.getElementById('submitSpinner');
+      
+      // Show loading state
+      submitBtn.disabled = true;
+      spinner.classList.remove('d-none');
+      
+      try {
+        // Collect form data
+        const requestData = {
+          type: document.getElementById('emergencyType').value,
+          location: document.getElementById('location').value,
+          description: document.getElementById('description').value,
+          contact: document.getElementById('victimContact').value,
+          name: document.getElementById('victimName').value,
+          priority: document.getElementById('priority').value
+        };
+        
+        // Submit to backend
+        console.log('Submitting request data:', requestData);
+        const response = await api.createRequest(requestData);
+        console.log('Response received:', response);
+        
+        if (response.success) {
+          // Show success message
+          showNotification('Emergency request submitted successfully!', 'success');
+          
+          // Display request status
+          document.getElementById('requestId').textContent = response.data.id;
+          document.getElementById('submissionTime').textContent = new Date().toLocaleString();
+          document.getElementById('requestStatus').style.display = 'block';
+          
+          // Reset form
+          document.getElementById('emergencyForm').reset();
+          
+          // Refresh requests list
+          loadMyRequests();
+          
+          // Scroll to status
+          document.getElementById('requestStatus').scrollIntoView({ behavior: 'smooth' });
+        }
+      } catch (error) {
+        console.error('Error submitting request:', error);
+        let errorMessage = 'Failed to submit request. Please try again.';
+        
+        if (error.message.includes('Failed to fetch')) {
+          errorMessage = 'Cannot connect to server. Please make sure the backend is running on http://localhost:5000';
+        } else if (error.message.includes('HTTP error')) {
+          errorMessage = `Server error: ${error.message}`;
+        }
+        
+        showNotification(errorMessage, 'danger');
+      } finally {
+        // Hide loading state
+        submitBtn.disabled = false;
+        spinner.classList.add('d-none');
+      }
+    });
+  </script>
+</body>
+</html>

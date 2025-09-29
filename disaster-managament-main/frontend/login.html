@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jeevan Setu - Login</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <meta name="google-signin-client_id" content="YOUR_GOOGLE_CLIENT_ID">
+  <style>
+    body {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+    }
+    .login-card {
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(10px);
+      border-radius: 20px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+    }
+    .role-card {
+      transition: all 0.3s ease;
+      cursor: pointer;
+      border: 2px solid transparent;
+    }
+    .role-card:hover {
+      transform: translateY(-5px);
+      border-color: #007bff;
+      box-shadow: 0 10px 25px rgba(0, 123, 255, 0.2);
+    }
+    .role-card.selected {
+      border-color: #007bff;
+      background-color: #e3f2fd;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="row justify-content-center">
+      <div class="col-md-8 col-lg-6">
+        <div class="login-card p-5">
+          <!-- Header -->
+          <div class="text-center mb-4">
+            <h1 class="display-4 text-primary">🌐 Jeevan Setu</h1>
+            <p class="lead text-muted">Emergency Response System</p>
+          </div>
+
+          <!-- Role Selection -->
+          <div class="mb-4">
+            <h5 class="text-center mb-3">Select Your Role</h5>
+            <div class="row g-3">
+              <div class="col-md-4">
+                <div class="card role-card h-100" onclick="selectRole('victim')" id="victimCard">
+                  <div class="card-body text-center">
+                    <div class="fs-1 mb-2">🚨</div>
+                    <h6>Victim</h6>
+                    <small class="text-muted">Need Emergency Help</small>
+                  </div>
+                </div>
+              </div>
+              <div class="col-md-4">
+                <div class="card role-card h-100" onclick="selectRole('volunteer')" id="volunteerCard">
+                  <div class="card-body text-center">
+                    <div class="fs-1 mb-2">🤝</div>
+                    <h6>Volunteer</h6>
+                    <small class="text-muted">Help Others</small>
+                  </div>
+                </div>
+              </div>
+              <div class="col-md-4">
+                <div class="card role-card h-100" onclick="selectRole('admin')" id="adminCard">
+                  <div class="card-body text-center">
+                    <div class="fs-1 mb-2">👨‍💼</div>
+                    <h6>Admin</h6>
+                    <small class="text-muted">Manage System</small>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Google OAuth Login -->
+          <div id="googleLogin" style="display: none;">
+            <div class="d-grid mb-3">
+              <a href="/api/auth/google" class="btn btn-outline-danger btn-lg">
+                <svg width="20" height="20" viewBox="0 0 24 24" class="me-2">
+                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                </svg>
+                Continue with Google
+              </a>
+            </div>
+            <div class="text-center">
+              <small class="text-muted">Secure authentication with Google</small>
+            </div>
+          </div>
+
+          <!-- Demo Login Form (for testing) -->
+          <form id="demoLoginForm" style="display: none;">
+            <div class="mb-3">
+              <label class="form-label">Username</label>
+              <input type="text" class="form-control" id="username" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Password</label>
+              <input type="password" class="form-control" id="password" required>
+            </div>
+            <div class="d-grid">
+              <button type="submit" class="btn btn-primary btn-lg">
+                <span id="loginSpinner" class="spinner-border spinner-border-sm d-none"></span>
+                Demo Login
+              </button>
+            </div>
+          </form>
+
+          <!-- Demo Credentials -->
+          <div id="demoCredentials" class="mt-4" style="display: none;">
+            <div class="alert alert-info">
+              <h6>Demo Credentials:</h6>
+              <div id="credentialsList"></div>
+            </div>
+          </div>
+
+          <!-- Emergency Access -->
+          <div class="text-center mt-4">
+            <p class="text-muted">Emergency? <a href="victim.html" class="text-danger">Access Without Login</a></p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="js/api.js"></script>
+  <script>
+    let selectedRole = null;
+
+    // Demo credentials for each role
+    const demoCredentials = {
+      victim: [
+        { username: 'victim1', password: 'victim123', name: 'Asha Patel' },
+        { username: 'victim2', password: 'victim123', name: 'Rajesh Kumar' }
+      ],
+      volunteer: [
+        { username: 'volunteer1', password: 'volunteer123', name: 'Priya Singh' },
+        { username: 'volunteer2', password: 'volunteer123', name: 'Amit Sharma' }
+      ],
+      admin: [
+        { username: 'admin', password: 'admin123', name: 'System Admin' },
+        { username: 'admin2', password: 'admin123', name: 'Emergency Manager' }
+      ]
+    };
+
+    function selectRole(role) {
+      selectedRole = role;
+      
+      // Update UI
+      document.querySelectorAll('.role-card').forEach(card => {
+        card.classList.remove('selected');
+      });
+      document.getElementById(role + 'Card').classList.add('selected');
+      
+      // Show Google OAuth login by default
+      document.getElementById('googleLogin').style.display = 'block';
+      document.getElementById('demoLoginForm').style.display = 'none';
+      
+      // Show demo credentials
+      showDemoCredentials(role);
+    }
+
+    function showDemoCredentials(role) {
+      const credentialsDiv = document.getElementById('demoCredentials');
+      const credentialsList = document.getElementById('credentialsList');
+      
+      credentialsList.innerHTML = demoCredentials[role].map(cred => 
+        `<div><strong>${cred.username}</strong> / ${cred.password} (${cred.name})</div>`
+      ).join('');
+      
+      credentialsDiv.style.display = 'block';
+    }
+
+    // Handle demo login form submission
+    document.getElementById('demoLoginForm').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+      const spinner = document.getElementById('loginSpinner');
+      
+      // Show loading state
+      spinner.classList.remove('d-none');
+      
+      try {
+        // Simulate authentication (in real app, this would call backend)
+        const isValid = validateCredentials(username, password, selectedRole);
+        
+        if (isValid) {
+          // Store user session
+          const user = demoCredentials[selectedRole].find(u => u.username === username);
+          sessionStorage.setItem('user', JSON.stringify({
+            role: selectedRole,
+            username: username,
+            name: user.name,
+            loginTime: new Date().toISOString()
+          }));
+          
+          // Redirect to appropriate dashboard
+          redirectToDashboard(selectedRole);
+        } else {
+          showNotification('Invalid credentials. Please try again.', 'danger');
+        }
+      } catch (error) {
+        console.error('Login error:', error);
+        showNotification('Login failed. Please try again.', 'danger');
+      } finally {
+        spinner.classList.add('d-none');
+      }
+    });
+
+    function validateCredentials(username, password, role) {
+      const user = demoCredentials[role].find(u => u.username === username);
+      return user && user.password === password;
+    }
+
+    function redirectToDashboard(role) {
+      switch(role) {
+        case 'victim':
+          window.location.href = 'victim.html';
+          break;
+        case 'volunteer':
+          window.location.href = 'volunteer.html';
+          break;
+        case 'admin':
+          window.location.href = 'admin.html';
+          break;
+        default:
+          showNotification('Invalid role selected.', 'danger');
+      }
+    }
+
+    // Handle Google OAuth callback
+    function handleGoogleCallback() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const token = urlParams.get('token');
+      const role = urlParams.get('role');
+      const error = urlParams.get('error');
+
+      if (error) {
+        showNotification('Authentication failed. Please try again.', 'danger');
+        return;
+      }
+
+      if (token && role) {
+        // Store user session
+        sessionStorage.setItem('user', JSON.stringify({
+          token: token,
+          role: role,
+          loginTime: new Date().toISOString()
+        }));
+
+        // Get user profile
+        fetch('/api/auth/profile', {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        })
+        .then(response => response.json())
+        .then(data => {
+          if (data.success) {
+            // Update session with user data
+            const userData = {
+              token: token,
+              role: role,
+              name: data.data.name,
+              email: data.data.email,
+              profilePicture: data.data.profilePicture,
+              loginTime: new Date().toISOString()
+            };
+            sessionStorage.setItem('user', JSON.stringify(userData));
+            redirectToDashboard(role);
+          } else {
+            showNotification('Failed to get user profile', 'danger');
+          }
+        })
+        .catch(error => {
+          console.error('Profile fetch error:', error);
+          showNotification('Failed to get user profile', 'danger');
+        });
+      }
+    }
+
+    // Toggle between Google OAuth and Demo login
+    function toggleLoginMode() {
+      const googleLogin = document.getElementById('googleLogin');
+      const demoLogin = document.getElementById('demoLoginForm');
+      
+      if (googleLogin.style.display === 'none') {
+        googleLogin.style.display = 'block';
+        demoLogin.style.display = 'none';
+      } else {
+        googleLogin.style.display = 'none';
+        demoLogin.style.display = 'block';
+      }
+    }
+
+    // Add toggle button
+    function addToggleButton() {
+      const credentialsDiv = document.getElementById('demoCredentials');
+      const toggleBtn = document.createElement('button');
+      toggleBtn.className = 'btn btn-sm btn-outline-secondary mt-2';
+      toggleBtn.textContent = 'Switch to Demo Login';
+      toggleBtn.onclick = toggleLoginMode;
+      credentialsDiv.appendChild(toggleBtn);
+    }
+
+    // Check if user is already logged in
+    window.addEventListener('load', function() {
+      // Handle Google OAuth callback
+      handleGoogleCallback();
+
+      const user = sessionStorage.getItem('user');
+      if (user) {
+        const userData = JSON.parse(user);
+        redirectToDashboard(userData.role);
+      } else {
+        // Add toggle button for demo login
+        addToggleButton();
+      }
+    });
+  </script>
+</body>
+</html>
