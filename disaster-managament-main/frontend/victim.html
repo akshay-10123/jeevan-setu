@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Jeevan Setu - Victim Portal</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
@@ -18,8 +19,8 @@
       <div class="collapse navbar-collapse" id="navbarNav">
         <ul class="navbar-nav ms-auto">
           <li class="nav-item"><a class="nav-link active" href="#">Victim Portal</a></li>
-          <li class="nav-item"><span class="nav-link" id="userInfo">Welcome, User</span></li>
-          <li class="nav-item"><button class="btn btn-outline-light btn-sm" onclick="logout()">Logout</button></li>
+          <li class="nav-item"><span class="nav-link" id="userInfo">Welcome</span></li>
+          <li class="nav-item" id="authAction"></li>
         </ul>
       </div>
     </div>
@@ -61,7 +62,14 @@
         </div>
         <div class="col-md-12">
           <label class="form-label">Location *</label>
-          <input type="text" id="location" class="form-control" placeholder="City / Address / Landmark" required>
+          <div class="input-group">
+            <input type="text" id="location" class="form-control" placeholder="City / Address / Landmark" required>
+            <button type="button" class="btn btn-outline-primary" id="useLocationBtn" onclick="getCurrentLocation()">
+              Use My Location
+            </button>
+          </div>
+          <div id="locationStatus" class="text-muted small mt-2">Detecting your location...</div>
+          <div id="locationCoords" class="text-muted small mt-1" style="display: none;"></div>
         </div>
         <div class="col-md-12">
           <label class="form-label">Emergency Details *</label>
@@ -86,6 +94,25 @@
             <p><strong>Status:</strong> <span class="badge bg-warning">Pending</span></p>
             <p><strong>Submitted at:</strong> <span id="submissionTime"></span></p>
             <p class="text-muted">A volunteer will contact you shortly. Keep your phone nearby!</p>
+            <a id="trackRequestLink" href="track.html" class="btn btn-outline-primary btn-sm">Track This Request</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Track by ID (guest friendly) -->
+      <div class="mt-5">
+        <div class="card">
+          <div class="card-body">
+            <h5 class="card-title">Already submitted? Track your request</h5>
+            <p class="text-muted small mb-3">No login needed — enter your Request ID</p>
+            <form id="quickTrackForm" class="row g-2 align-items-end">
+              <div class="col-md-9">
+                <input type="text" id="quickTrackId" class="form-control" placeholder="Paste Request ID">
+              </div>
+              <div class="col-md-3 d-grid">
+                <button type="submit" class="btn btn-primary">Track Status</button>
+              </div>
+            </form>
           </div>
         </div>
       </div>
@@ -120,38 +147,141 @@
   </footer>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="js/api.js"></script>
+  <script src="js/api.js?v=5"></script>
   <script>
-    // Check authentication
-    function checkAuth() {
-      const user = sessionStorage.getItem('user');
-      if (!user) {
-        window.location.href = 'login.html';
+    let isGuestMode = false;
+
+    function getLoggedInUser() {
+      try {
+        const raw = sessionStorage.getItem('user');
+        return raw ? JSON.parse(raw) : null;
+      } catch {
+        return null;
+      }
+    }
+
+    function initAuth() {
+      const params = new URLSearchParams(window.location.search);
+      isGuestMode = params.get('guest') === '1';
+
+      const user = getLoggedInUser();
+      const userInfo = document.getElementById('userInfo');
+      const authAction = document.getElementById('authAction');
+
+      if (user && user.role === 'victim') {
+        userInfo.textContent = `Welcome, ${user.name || 'User'}`;
+        authAction.innerHTML = '<button class="btn btn-outline-light btn-sm" onclick="logout()">Logout</button>';
+        return true;
+      }
+
+      if (user && user.role !== 'victim') {
+        showNotification('This page is for victims. Redirecting to your dashboard...', 'warning');
+        setTimeout(() => {
+          if (user.role === 'volunteer') window.location.href = 'volunteer.html';
+          else if (user.role === 'admin') window.location.href = 'admin.html';
+          else window.location.href = 'login.html';
+        }, 1500);
         return false;
       }
-      
-      const userData = JSON.parse(user);
-      if (userData.role !== 'victim') {
-        showNotification('Access denied. Victim role required.', 'danger');
-        setTimeout(() => window.location.href = 'login.html', 2000);
-        return false;
-      }
-      
-      // Show user info
-      document.getElementById('userInfo').textContent = `Welcome, ${userData.name}`;
+
+      // Guest mode — no login required
+      isGuestMode = true;
+      userInfo.textContent = 'Guest Mode — No login required';
+      authAction.innerHTML = '<a href="login.html" class="btn btn-outline-light btn-sm">Log In</a>';
       return true;
     }
 
-    // Logout function
     function logout() {
       sessionStorage.removeItem('user');
       window.location.href = 'login.html';
     }
 
+    let currentCoordinates = null;
+    let isSettingAddressFromGPS = false;
+
+    function updateLocationStatus(message = null, isError = false) {
+      const statusDiv = document.getElementById('locationStatus');
+      const coordsDiv = document.getElementById('locationCoords');
+
+      if (message) {
+        statusDiv.innerHTML = `<span class="${isError ? 'text-warning' : 'text-muted'}">${message}</span>`;
+        coordsDiv.style.display = 'none';
+        return;
+      }
+
+      if (currentCoordinates) {
+        statusDiv.innerHTML = '<span class="text-success">Location detected via GPS</span>';
+        coordsDiv.innerHTML = `Lat: ${currentCoordinates.lat.toFixed(4)}, Lng: ${currentCoordinates.lng.toFixed(4)}`;
+        coordsDiv.style.display = 'block';
+      }
+    }
+
+    async function fillAddressFromCoordinates(lat, lng) {
+      try {
+        isSettingAddressFromGPS = true;
+        const result = await api.reverseGeocode(lat, lng);
+        if (result.success && result.data?.address) {
+          document.getElementById('location').value = result.data.address;
+        }
+      } catch (error) {
+        console.warn('Reverse geocoding failed, using coordinates only:', error);
+        isSettingAddressFromGPS = true;
+        document.getElementById('location').value = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+      } finally {
+        isSettingAddressFromGPS = false;
+      }
+    }
+
+    function getCurrentLocation() {
+      const btn = document.getElementById('useLocationBtn');
+      btn.disabled = true;
+      updateLocationStatus('Getting your location...');
+
+      if (!navigator.geolocation) {
+        updateLocationStatus('Geolocation is not supported by this browser. Please type your address manually.', true);
+        btn.disabled = false;
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          currentCoordinates = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          };
+
+          updateLocationStatus();
+          await fillAddressFromCoordinates(currentCoordinates.lat, currentCoordinates.lng);
+          btn.disabled = false;
+        },
+        (error) => {
+          console.error('Error getting location:', error);
+          currentCoordinates = null;
+          updateLocationStatus('Location access denied. Please allow location permission or type your address manually.', true);
+          btn.disabled = false;
+        }
+      );
+    }
+
     // Initialize page
     document.addEventListener('DOMContentLoaded', function() {
-      if (!checkAuth()) return;
+      if (!initAuth()) return;
+
+      document.getElementById('location').addEventListener('input', function() {
+        if (!isSettingAddressFromGPS && currentCoordinates) {
+          currentCoordinates = null;
+          updateLocationStatus('Using typed address. Location will be geocoded via Mapbox on submit.');
+        }
+      });
+
+      getCurrentLocation();
       loadMyRequests();
+
+      document.getElementById('quickTrackForm').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const id = document.getElementById('quickTrackId').value.trim();
+        if (id) window.location.href = `track.html?id=${encodeURIComponent(id)}`;
+      });
     });
 
     // Load user's requests
@@ -165,9 +295,9 @@
         
         // Try to get requests from API first
         try {
-          const user = JSON.parse(sessionStorage.getItem('user'));
+          const user = getLoggedInUser();
           if (user && user.token) {
-            const response = await fetch('/api/users/my-requests', {
+            const response = await fetch(`${window.API_BASE_URL}/users/my-requests`, {
               headers: {
                 'Authorization': `Bearer ${user.token}`
               }
@@ -184,9 +314,10 @@
           console.log('API not available, using mock data');
         }
         
-        // Fallback to mock data
+        // Fallback to guest/local requests
+        const guestRequests = JSON.parse(localStorage.getItem('guestRequests') || '[]');
         const mockRequests = JSON.parse(localStorage.getItem('mockRequests') || '[]');
-        displayRequests(mockRequests);
+        displayRequests([...guestRequests, ...mockRequests]);
         
       } catch (error) {
         console.error('Error loading requests:', error);
@@ -237,7 +368,7 @@
                 </p>
               </div>
               <div class="card-footer">
-                <small class="text-muted">Request ID: #${request._id}</small>
+                <small class="text-muted">Request ID: #${request._id || request.id}</small>
               </div>
             </div>
           </div>
@@ -278,6 +409,10 @@
           name: document.getElementById('victimName').value,
           priority: document.getElementById('priority').value
         };
+
+        if (currentCoordinates) {
+          requestData.coordinates = currentCoordinates;
+        }
         
         // Submit to backend
         console.log('Submitting request data:', requestData);
@@ -285,16 +420,32 @@
         console.log('Response received:', response);
         
         if (response.success) {
-          // Show success message
+          const requestId = response.data._id || response.data.id;
           showNotification('Emergency request submitted successfully!', 'success');
-          
-          // Display request status
-          document.getElementById('requestId').textContent = response.data.id;
+
+          document.getElementById('requestId').textContent = requestId;
+          document.getElementById('trackRequestLink').href = `track.html?id=${encodeURIComponent(requestId)}`;
           document.getElementById('submissionTime').textContent = new Date().toLocaleString();
           document.getElementById('requestStatus').style.display = 'block';
+
+          if (isGuestMode || !getLoggedInUser()?.token) {
+            const guestRequests = JSON.parse(localStorage.getItem('guestRequests') || '[]');
+            guestRequests.unshift({
+              _id: requestId,
+              type: requestData.type,
+              description: requestData.description,
+              address: requestData.location,
+              priority: requestData.priority,
+              status: 'pending',
+              createdAt: new Date().toISOString()
+            });
+            localStorage.setItem('guestRequests', JSON.stringify(guestRequests));
+          }
           
           // Reset form
           document.getElementById('emergencyForm').reset();
+          currentCoordinates = null;
+          getCurrentLocation();
           
           // Refresh requests list
           loadMyRequests();

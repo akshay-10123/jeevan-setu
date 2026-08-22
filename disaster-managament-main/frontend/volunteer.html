@@ -9,7 +9,7 @@
   <!-- Leaflet CSS for maps -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <!-- Custom CSS -->
-  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
@@ -39,7 +39,7 @@
         <div class="card mb-3">
           <div class="card-body text-center">
             <div class="fs-1">👤</div>
-            <h5 class="card-title mt-2">Rajesh Kumar</h5>
+            <h5 class="card-title mt-2" id="volunteerName">Volunteer</h5>
             <p class="card-text">Volunteer since 2023</p>
             <div class="d-flex justify-content-around mt-3">
               <div>
@@ -60,17 +60,31 @@
             <button id="availabilityBtn" class="btn btn-success w-100 mb-2" onclick="toggleAvailability()">
               <span class="status-indicator online me-2"></span>Available for Help
             </button>
-            <button class="btn btn-outline-primary w-100 mb-2" onclick="updateLocation()">📍 Update Location</button>
+            <button class="btn btn-outline-primary w-100 mb-2" onclick="detectVolunteerGPS()">📍 Detect GPS</button>
             <button class="btn btn-outline-secondary w-100" onclick="showSettings()">⚙️ Settings</button>
           </div>
         </div>
 
-        <!-- Location Status -->
-        <div class="card mb-3">
+        <!-- Location Setup -->
+        <div class="card mb-3 border-primary">
           <div class="card-body">
-            <h6>📍 Current Location</h6>
+            <h6 class="text-primary">📍 Set Your Location</h6>
+            <p class="text-muted small mb-2">Required to see nearby emergency requests</p>
+            <div class="mb-2">
+              <label class="form-label small mb-1">Address / Area</label>
+              <input type="text" id="volunteerAddress" class="form-control form-control-sm"
+                     placeholder="City, landmark, or address">
+            </div>
+            <div class="d-grid gap-2 mb-2">
+              <button type="button" class="btn btn-outline-primary btn-sm" onclick="detectVolunteerGPS()">
+                Use My GPS Location
+              </button>
+              <button type="button" class="btn btn-primary btn-sm" onclick="saveVolunteerLocation()">
+                Save Location
+              </button>
+            </div>
             <div id="locationStatus">
-              <div class="text-muted small">Getting location...</div>
+              <div class="text-muted small">Location not set yet</div>
             </div>
             <div id="locationCoords" class="text-muted small mt-2" style="display: none;"></div>
           </div>
@@ -142,8 +156,19 @@
         <section id="map" style="display: none;">
           <div class="card">
             <div class="card-body">
-              <h2>🗺️ Map View</h2>
-              <div id="mapContainer" class="mt-3" style="height: 500px; border-radius: 8px;"></div>
+              <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                <h2 class="h4 mb-0">🗺️ Pending Requests Map</h2>
+                <span class="badge bg-primary" id="mapRequestCount">0 requests</span>
+              </div>
+              <div class="map-legend mb-2">
+                <span class="map-legend-dot" style="background:#0d6efd"></span> You &nbsp;
+                <span class="map-legend-dot" style="background:#dc3545"></span> Urgent &nbsp;
+                <span class="map-legend-dot" style="background:#fd7e14"></span> High &nbsp;
+                <span class="map-legend-dot" style="background:#ffc107"></span> Medium &nbsp;
+                <span class="map-legend-dot" style="background:#6c757d"></span> Low
+              </div>
+              <div id="mapContainer" class="mt-2" style="height: 500px; border-radius: 8px; border: 1px solid #dee2e6;"></div>
+              <p class="text-muted small mt-2 mb-0">Tap a marker to see details and accept a request.</p>
             </div>
           </div>
         </section>
@@ -172,7 +197,9 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
   <!-- Leaflet JS for maps -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="js/api.js"></script>
+  <script src="js/api.js?v=6"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="js/realtime.js?v=1"></script>
   <script>
     // Global variables
     let allRequests = [];
@@ -181,6 +208,12 @@
     let currentLocation = null;
     let map = null;
     let mapMarkers = [];
+    let volunteerMarker = null;
+
+    function getPriorityColor(priority) {
+      const colors = { urgent: '#dc3545', high: '#fd7e14', medium: '#ffc107', low: '#6c757d' };
+      return colors[priority] || '#ffc107';
+    }
 
     // Check authentication
     function checkAuth() {
@@ -199,6 +232,7 @@
       
       // Show user info
       document.getElementById('userInfo').textContent = `Welcome, ${userData.name}`;
+      document.getElementById('volunteerName').textContent = userData.name;
       return true;
     }
 
@@ -212,56 +246,115 @@
     document.addEventListener('DOMContentLoaded', function() {
       console.log('Page loaded, initializing...');
       if (!checkAuth()) return;
-      getCurrentLocation();
-      createSampleData(); // Create sample data for testing
+      loadSavedVolunteerLocation();
+      loadVolunteerAvailability();
       loadRequests();
       loadWorkHistory();
       setupEventListeners();
+      initVolunteerRealtime();
     });
 
-    // Create sample data for testing
-    function createSampleData() {
-      const existingRequests = JSON.parse(localStorage.getItem('mockRequests') || '[]');
-      
-      if (existingRequests.length === 0) {
-        const sampleRequests = [
-          {
-            id: 1,
-            type: 'medical',
-            location: 'Mumbai, Maharashtra',
-            description: 'Need immediate medical assistance for elderly person',
-            contact: '+91-9876543210',
-            name: 'Priya Sharma',
-            priority: 'urgent',
-            status: 'pending',
-            timestamp: new Date(Date.now() - 30 * 60 * 1000).toISOString() // 30 minutes ago
-          },
-          {
-            id: 2,
-            type: 'rescue',
-            location: 'Delhi, Delhi',
-            description: 'Stuck in building collapse, need rescue team',
-            contact: '+91-9876543211',
-            name: 'Rajesh Kumar',
-            priority: 'high',
-            status: 'pending',
-            timestamp: new Date(Date.now() - 15 * 60 * 1000).toISOString() // 15 minutes ago
-          },
-          {
-            id: 3,
-            type: 'food',
-            location: 'Bangalore, Karnataka',
-            description: 'Need food and water for 10 people in shelter',
-            contact: '+91-9876543212',
-            name: 'Anita Patel',
-            priority: 'medium',
-            status: 'pending',
-            timestamp: new Date(Date.now() - 5 * 60 * 1000).toISOString() // 5 minutes ago
+    function getRequestId(request) {
+      return request._id || request.id;
+    }
+
+    function formatRequestLocation(request) {
+      if (request.address) return request.address;
+      if (typeof request.location === 'string') return request.location;
+      if (request.location?.coordinates) {
+        const [lng, lat] = request.location.coordinates;
+        return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+      }
+      return 'Location not specified';
+    }
+
+    function initVolunteerRealtime() {
+      connectRealtime({
+        onNewRequest: (request) => {
+          showNotification(`🚨 New ${request.type} request nearby!`, 'danger');
+          loadRequests();
+        },
+        onRequestUpdated: () => loadRequests()
+      });
+      setInterval(loadRequests, 15000);
+    }
+
+    async function loadVolunteerAvailability() {
+      try {
+        const user = JSON.parse(sessionStorage.getItem('user'));
+        const res = await fetch(`${window.API_BASE_URL}/auth/profile`, {
+          headers: { Authorization: `Bearer ${user.token}` }
+        });
+        const data = await res.json();
+        if (data.success) {
+          isAvailable = data.data.isActive !== false;
+          updateAvailabilityButton();
+        }
+      } catch (e) {
+        console.warn('Could not load availability');
+      }
+    }
+
+    function updateAvailabilityButton() {
+      const btn = document.getElementById('availabilityBtn');
+      if (isAvailable) {
+        btn.classList.remove('btn-danger');
+        btn.classList.add('btn-success');
+        btn.innerHTML = '<span class="status-indicator online me-2"></span>Available for Help';
+      } else {
+        btn.classList.remove('btn-success');
+        btn.classList.add('btn-danger');
+        btn.innerHTML = '<span class="status-indicator offline me-2"></span>Busy / Unavailable';
+      }
+    }
+
+    async function loadSavedVolunteerLocation() {
+      try {
+        const user = JSON.parse(sessionStorage.getItem('user'));
+        const res = await fetch(`${window.API_BASE_URL}/auth/profile`, {
+          headers: { Authorization: `Bearer ${user.token}` }
+        });
+        const data = await res.json();
+        if (data.success && data.data.location?.coordinates?.length === 2) {
+          const [lng, lat] = data.data.location.coordinates;
+          currentLocation = { lat, lng };
+          if (data.data.address) {
+            document.getElementById('volunteerAddress').value = data.data.address;
           }
-        ];
-        
-        localStorage.setItem('mockRequests', JSON.stringify(sampleRequests));
-        console.log('Sample data created');
+          updateLocationStatus('Saved location loaded', true);
+        }
+      } catch (e) {
+        console.warn('Could not load saved location');
+      }
+    }
+
+    function detectVolunteerGPS() {
+      getCurrentLocation();
+    }
+
+    async function saveVolunteerLocation() {
+      if (!currentLocation) {
+        showNotification('Please detect GPS location first, or enter address and use GPS.', 'warning');
+        detectVolunteerGPS();
+        return;
+      }
+
+      const address = document.getElementById('volunteerAddress').value.trim()
+        || `${currentLocation.lat.toFixed(4)}, ${currentLocation.lng.toFixed(4)}`;
+
+      try {
+        await api.updateProfile({
+          location: {
+            type: 'Point',
+            coordinates: [currentLocation.lng, currentLocation.lat]
+          },
+          address
+        });
+        updateLocationStatus('Location saved successfully', true);
+        showNotification('Location saved! You will now see nearby requests.', 'success');
+        loadRequests();
+      } catch (error) {
+        showNotification(error.message || 'Failed to save location', 'danger');
       }
     }
 
@@ -294,13 +387,16 @@
     }
 
     // Update location status display
-    function updateLocationStatus(message = null) {
+    function updateLocationStatus(message = null, isSuccess = false) {
       const statusDiv = document.getElementById('locationStatus');
       const coordsDiv = document.getElementById('locationCoords');
       
       if (message) {
-        statusDiv.innerHTML = `<div class="text-warning small">${message}</div>`;
-        coordsDiv.style.display = 'none';
+        const cls = isSuccess ? 'text-success' : 'text-warning';
+        statusDiv.innerHTML = `<div class="${cls} small">${message}</div>`;
+        if (!isSuccess) {
+          coordsDiv.style.display = 'none';
+        }
       } else if (currentLocation) {
         statusDiv.innerHTML = `<div class="text-success small">✅ Location detected</div>`;
         coordsDiv.innerHTML = `Lat: ${currentLocation.lat.toFixed(4)}, Lng: ${currentLocation.lng.toFixed(4)}`;
@@ -314,7 +410,7 @@
       
       try {
         const user = JSON.parse(sessionStorage.getItem('user'));
-        const response = await fetch('/api/users/profile', {
+        const response = await fetch(`${window.API_BASE_URL}/auth/profile`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
@@ -329,7 +425,7 @@
         });
         
         if (response.ok) {
-          console.log('Location updated on server');
+          updateLocationStatus('GPS detected — click Save Location', true);
         }
       } catch (error) {
         console.error('Error updating location on server:', error);
@@ -345,7 +441,8 @@
         try {
           const user = JSON.parse(sessionStorage.getItem('user'));
           if (user && user.token) {
-            const response = await fetch('/api/users/nearby-requests', {
+            const maxDistance = (document.getElementById('distanceRange')?.value || 10) * 1000;
+            const response = await fetch(`${window.API_BASE_URL}/users/nearby-requests?maxDistance=${maxDistance}`, {
               headers: {
                 'Authorization': `Bearer ${user.token}`
               }
@@ -357,6 +454,9 @@
             if (data && data.success) {
               allRequests = data.data || [];
               filteredRequests = [...allRequests];
+              if (data.locationFilter === false) {
+                showNotification(data.message || 'Set location for nearby filter', 'warning');
+              }
               console.log('Loaded requests:', allRequests);
               displayRequests();
               updateMap();
@@ -364,16 +464,12 @@
             }
           }
         } catch (apiError) {
-          console.log('API not available, using mock data');
+          console.log('API error loading requests:', apiError);
         }
         
-        // Fallback to mock data
-        const mockRequests = JSON.parse(localStorage.getItem('mockRequests') || '[]');
-        allRequests = mockRequests;
-        filteredRequests = [...allRequests];
-        console.log('Loaded mock requests:', allRequests);
+        allRequests = [];
+        filteredRequests = [];
         displayRequests();
-        updateMap();
         
       } catch (error) {
         console.error('Error loading requests:', error);
@@ -407,7 +503,7 @@
         try {
           const user = JSON.parse(sessionStorage.getItem('user'));
           if (user && user.token) {
-            const response = await fetch('/api/users/profile', {
+            const response = await fetch(`${window.API_BASE_URL}/auth/profile`, {
               headers: {
                 'Authorization': `Bearer ${user.token}`
               }
@@ -482,18 +578,31 @@
         noRequestsMsg.style.display = 'none';
       }
       
-      container.innerHTML = filteredRequests.map(request => {
+      // Sort by priority rank: urgent > high > medium > low, fallback by timestamp
+      const rank = { urgent: 0, high: 1, medium: 2, low: 3 };
+      const sorted = [...filteredRequests].sort((a, b) => {
+        const ra = rank[(a.priority || 'medium')] ?? 2;
+        const rb = rank[(b.priority || 'medium')] ?? 2;
+        if (ra !== rb) return ra - rb;
+        const ta = new Date(a.timestamp || a.createdAt || 0).getTime();
+        const tb = new Date(b.timestamp || b.createdAt || 0).getTime();
+        return ta - tb;
+      });
+
+      container.innerHTML = sorted.map(request => {
+        const rid = getRequestId(request);
+        const victimName = request.victimId?.name || request.name || 'Anonymous';
         console.log('Rendering request:', request);
         return `
           <div class="card mb-3">
             <div class="card-header d-flex justify-content-between">
               <span class="badge ${getPriorityBadge(request.priority || 'medium')}">${(request.priority || 'medium').toUpperCase()}</span>
-              <small>${formatTimestamp(request.timestamp)}</small>
+              <small>${formatTimestamp(request.createdAt || request.timestamp)}</small>
             </div>
             <div class="card-body">
               <h5>${getEmergencyIcon(request.type)} ${getEmergencyTypeName(request.type)}</h5>
-              <p><strong>${request.name || 'Anonymous'}</strong> - ${request.description}</p>
-              <p>📍 ${request.location}</p>
+              <p><strong>${victimName}</strong> - ${request.description}</p>
+              <p>📍 ${formatRequestLocation(request)}</p>
               <div class="d-flex gap-3">
                 <span>Type: ${request.type}</span>
                 <span>Status: ${request.status}</span>
@@ -501,17 +610,17 @@
               </div>
               <div class="mt-3">
                 ${request.status === 'pending' ? 
-                  `<button class="btn btn-primary me-2" onclick="acceptRequest(${request.id})" id="acceptBtn${request.id}">
-                    <span class="spinner-border spinner-border-sm d-none" id="spinner${request.id}"></span>
+                  `<button class="btn btn-primary me-2" onclick="acceptRequest('${rid}')" id="acceptBtn${rid}">
+                    <span class="spinner-border spinner-border-sm d-none" id="spinner${rid}"></span>
                     Accept Request
                   </button>` : 
                   request.status === 'assigned' ? 
-                    `<button class="btn btn-success me-2" onclick="completeRequest(${request.id})" id="completeBtn${request.id}">
+                    `<button class="btn btn-success me-2" onclick="completeRequest('${rid}')" id="completeBtn${rid}">
                       Complete Request
                     </button>` :
                     `<span class="badge ${request.status === 'completed' ? 'bg-success' : 'bg-secondary'}">${request.status.toUpperCase()}</span>`
                 }
-                <button class="btn btn-outline-secondary" onclick="viewRequestDetails(${request.id})">View Details</button>
+                <button class="btn btn-outline-secondary" onclick="viewRequestDetails('${rid}')">View Details</button>
               </div>
             </div>
           </div>
@@ -568,11 +677,11 @@
           if (btn.dataset.view === 'map') {
             document.getElementById('requests').style.display = 'none';
             document.getElementById('map').style.display = 'block';
-            // Initialize map if not already done
             setTimeout(() => {
               initializeMap();
               updateMap();
-            }, 100);
+              if (map) map.invalidateSize();
+            }, 150);
           } else {
             document.getElementById('requests').style.display = 'block';
             document.getElementById('map').style.display = 'none';
@@ -604,6 +713,7 @@
 
       console.log('Filtered requests:', filteredRequests);
       displayRequests();
+      updateMap();
     }
 
     // Accept request
@@ -624,7 +734,7 @@
         try {
           const user = JSON.parse(sessionStorage.getItem('user'));
           if (user && user.token) {
-            const response = await fetch(`/api/users/accept-request/${id}`, {
+            const response = await fetch(`${window.API_BASE_URL}/users/accept-request/${id}`, {
               method: 'POST',
               headers: {
                 'Authorization': `Bearer ${user.token}`
@@ -693,7 +803,7 @@
         try {
           const user = JSON.parse(sessionStorage.getItem('user'));
           if (user && user.token) {
-            const response = await fetch(`/api/users/complete-request/${id}`, {
+            const response = await fetch(`${window.API_BASE_URL}/users/complete-request/${id}`, {
               method: 'POST',
               headers: {
                 'Authorization': `Bearer ${user.token}`
@@ -753,63 +863,83 @@
       }
     }
 
-    // Initialize map
     function initializeMap() {
-      if (map) return; // Map already initialized
-      
+      if (map) return;
+
       const mapContainer = document.getElementById('mapContainer');
       if (!mapContainer) return;
-      
-      // Default to Mumbai if no location
+
       const defaultLat = currentLocation?.lat || 19.0760;
       const defaultLng = currentLocation?.lng || 72.8777;
-      
-      map = L.map('mapContainer').setView([defaultLat, defaultLng], 12);
-      
+
+      map = L.map('mapContainer').setView([defaultLat, defaultLng], 11);
+
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© OpenStreetMap contributors'
       }).addTo(map);
-      
-      // Add volunteer location marker
-      if (currentLocation) {
-        L.marker([currentLocation.lat, currentLocation.lng])
-          .addTo(map)
-          .bindPopup('Your Location')
-          .openPopup();
-      }
     }
 
-    // Update map with requests
+    function updateVolunteerMarker() {
+      if (!map || !currentLocation) return;
+      if (volunteerMarker) map.removeLayer(volunteerMarker);
+      volunteerMarker = L.circleMarker([currentLocation.lat, currentLocation.lng], {
+        radius: 10,
+        color: '#0d6efd',
+        fillColor: '#0d6efd',
+        fillOpacity: 0.85,
+        weight: 2
+      }).addTo(map).bindPopup('<strong>Your location</strong>');
+    }
+
+    // Update map with pending requests
     function updateMap() {
-      if (!map) {
-        initializeMap();
-        return;
-      }
-      
-      // Clear existing markers
+      if (!map) initializeMap();
+      if (!map) return;
+
       mapMarkers.forEach(marker => map.removeLayer(marker));
       mapMarkers = [];
-      
-      // Add request markers
+
+      updateVolunteerMarker();
+
+      const bounds = [];
+      if (currentLocation) bounds.push([currentLocation.lat, currentLocation.lng]);
+
+      let mappedCount = 0;
       filteredRequests.forEach(request => {
-        if (request.location && request.location.coordinates) {
-          const [lng, lat] = request.location.coordinates;
-          const marker = L.marker([lat, lng])
-            .addTo(map)
-            .bindPopup(`
-              <div>
-                <h6>${getEmergencyTypeName(request.type)}</h6>
-                <p><strong>Priority:</strong> ${request.priority}</p>
-                <p><strong>Description:</strong> ${request.description.substring(0, 100)}...</p>
-                <p><strong>Contact:</strong> ${request.contact}</p>
-                <button class="btn btn-sm btn-primary" onclick="acceptRequest('${request._id}')">
-                  Accept Request
-                </button>
-              </div>
-            `);
-          mapMarkers.push(marker);
-        }
+        if (!request.location?.coordinates || request.location.coordinates.length !== 2) return;
+        const [lng, lat] = request.location.coordinates;
+        const rid = getRequestId(request);
+        const color = getPriorityColor(request.priority || 'medium');
+        const victimName = request.victimId?.name || request.name || 'Anonymous';
+
+        const marker = L.circleMarker([lat, lng], {
+          radius: 9,
+          color: color,
+          fillColor: color,
+          fillOpacity: 0.9,
+          weight: 2
+        }).addTo(map).bindPopup(`
+          <div style="min-width:180px">
+            <strong>${getEmergencyTypeName(request.type)}</strong><br>
+            <small>${victimName}</small><br>
+            <span class="badge bg-secondary">${(request.priority || 'medium').toUpperCase()}</span>
+            <p class="small mt-1 mb-2">${(request.description || '').substring(0, 80)}...</p>
+            <button class="btn btn-sm btn-primary w-100" onclick="acceptRequest('${rid}')">Accept</button>
+          </div>
+        `);
+        mapMarkers.push(marker);
+        bounds.push([lat, lng]);
+        mappedCount++;
       });
+
+      const countEl = document.getElementById('mapRequestCount');
+      if (countEl) countEl.textContent = `${mappedCount} pending on map`;
+
+      if (bounds.length > 1) {
+        map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
+      } else if (currentLocation) {
+        map.setView([currentLocation.lat, currentLocation.lng], 12);
+      }
     }
 
     // Update location
@@ -830,21 +960,21 @@
       }
     }
 
-    // Toggle availability
-    function toggleAvailability() {
-      const btn = document.getElementById('availabilityBtn');
+    // Toggle availability (synced to backend)
+    async function toggleAvailability() {
       isAvailable = !isAvailable;
-      
-      if (isAvailable) {
-        btn.classList.remove('btn-danger');
-        btn.classList.add('btn-success');
-        btn.innerHTML = '<span class="status-indicator online me-2"></span>Available for Help';
-        showNotification('You are now available to help!', 'success');
-      } else {
-        btn.classList.remove('btn-success');
-        btn.classList.add('btn-danger');
-        btn.innerHTML = '<span class="status-indicator offline me-2"></span>Unavailable';
-        showNotification('You are now unavailable.', 'warning');
+      updateAvailabilityButton();
+
+      try {
+        await api.updateProfile({ isActive: isAvailable });
+        showNotification(
+          isAvailable ? 'You are now available to help!' : 'You are marked as busy/unavailable.',
+          isAvailable ? 'success' : 'warning'
+        );
+      } catch (error) {
+        isAvailable = !isAvailable;
+        updateAvailabilityButton();
+        showNotification(error.message || 'Failed to update availability', 'danger');
       }
     }
 
@@ -852,9 +982,6 @@
     function scrollToTop() {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
-
-    // Auto-refresh requests every 30 seconds
-    setInterval(loadRequests, 30000);
   </script>
 </body>
 </html>

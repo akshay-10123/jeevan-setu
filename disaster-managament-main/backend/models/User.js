@@ -1,6 +1,9 @@
 const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema({
+  passwordHash: {
+    type: String,
+  },
   googleId: {
     type: String,
     unique: true,
@@ -26,21 +29,14 @@ const userSchema = new mongoose.Schema({
   location: {
     type: {
       type: String,
-      enum: ['Point'],
-      default: 'Point'
+      enum: ['Point']
     },
     coordinates: {
-      type: [Number], // [longitude, latitude]
-      required: function() {
-        return this.role === 'volunteer';
-      }
+      type: [Number] // [longitude, latitude]
     }
   },
   address: {
-    type: String,
-    required: function() {
-      return this.role === 'volunteer';
-    }
+    type: String
   },
   phone: {
     type: String
@@ -76,7 +72,19 @@ const userSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Create index for location-based queries
-userSchema.index({ location: '2dsphere' });
+// Don't save incomplete GeoJSON (breaks 2dsphere index)
+userSchema.pre('save', function(next) {
+  if (
+    this.location &&
+    (!Array.isArray(this.location.coordinates) || this.location.coordinates.length !== 2)
+  ) {
+    this.set('location', undefined);
+  }
+  next();
+});
+
+// Sparse index — only users with valid coordinates are indexed
+userSchema.index({ location: '2dsphere' }, { sparse: true });
+ 
 
 module.exports = mongoose.model('User', userSchema);

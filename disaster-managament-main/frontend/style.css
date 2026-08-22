@@ -1,30 +1,98 @@
-/* style.css */
+/* style.css — shared + mobile polish */
 
-/* Sidebar */
 .list-group-item.active {
-    background-color: #0d6efd;
-    border-color: #0d6efd;
-    color: white;
+  background-color: #0d6efd;
+  border-color: #0d6efd;
+  color: white;
+}
+
+table.table-hover tbody tr:hover {
+  background-color: rgba(13, 110, 253, 0.1);
+}
+
+.badge {
+  font-size: 0.85rem;
+}
+
+.card {
+  border-radius: 0.5rem;
+}
+
+body {
+  padding-top: 0;
+  background-color: #f8f9fa;
+}
+
+/* Touch-friendly buttons on mobile */
+@media (max-width: 768px) {
+  .btn-lg, .btn-group .btn, .demo-login {
+    min-height: 44px;
   }
-  
-  /* Table hover effect */
-  table.table-hover tbody tr:hover {
-    background-color: rgba(13, 110, 253, 0.1);
+
+  .table-responsive {
+    font-size: 0.85rem;
   }
-  
-  /* Badge custom colors */
-  .badge {
-    font-size: 0.9rem;
+
+  .login-card, .card.p-4 {
+    padding: 1.25rem !important;
   }
-  
-  /* Cards spacing */
-  .card {
-    border-radius: 0.5rem;
+
+  #mapContainer {
+    height: 320px !important;
+    min-height: 280px;
   }
-  
-  /* Body padding */
-  body {
-    padding-top: 0;
-    background-color: #f8f9fa;
+
+  .navbar-nav .nav-link {
+    padding: 0.5rem 0;
   }
-  
+
+  .d-flex.gap-3 {
+    flex-direction: column;
+    gap: 0.25rem !important;
+  }
+
+  .container-fluid.mt-4 {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+}
+
+/* Volunteer map legend */
+.map-legend {
+  background: rgba(255, 255, 255, 0.92);
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  line-height: 1.6;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+}
+
+.map-legend-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 4px;
+}
+
+.status-indicator {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.status-indicator.online {
+  background: #fff;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.5);
+}
+
+.status-indicator.offline {
+  background: #ccc;
+}
+
+.nearest-volunteer-tag {
+  font-size: 0.7rem;
+  color: #198754;
+  font-weight: 600;
+}

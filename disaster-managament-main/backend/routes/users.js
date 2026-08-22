@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Request = require('../models/Request');
 const Notification = require('../models/Notification');
+const { emitRequestUpdated } = require('../socket');
 const router = express.Router();
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
@@ -22,6 +23,88 @@ const authenticateToken = (req, res, next) => {
     return res.status(401).json({ success: false, message: 'Invalid token' });
   }
 };
+
+// Get all users — victims + volunteers (Admin only)
+router.get('/all', authenticateToken, async (req, res) => {
+  try {
+    const currentUser = await User.findById(req.user.userId);
+    if (currentUser.role !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Admin access required' });
+    }
+
+    const users = await User.find({ role: { $in: ['victim', 'volunteer'] } })
+      .select('-passwordHash -googleId')
+      .sort({ role: 1, name: 1 });
+
+    res.json({ success: true, data: users });
+  } catch (error) {
+    console.error('Get all users error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch users' });
+  }
+});
+
+// Admin assign request to volunteer (no manual ID needed from UI)
+router.post('/admin/assign-request/:requestId', authenticateToken, async (req, res) => {
+  try {
+    const currentUser = await User.findById(req.user.userId);
+    if (currentUser.role !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Admin access required' });
+    }
+
+    const { volunteerId } = req.body;
+    if (!volunteerId) {
+      return res.status(400).json({ success: false, message: 'Please select a volunteer' });
+    }
+
+    const request = await Request.findById(req.params.requestId);
+    if (!request) {
+      return res.status(404).json({ success: false, message: 'Request not found' });
+    }
+
+    if (request.status !== 'pending') {
+      return res.status(400).json({ success: false, message: 'Only pending requests can be assigned' });
+    }
+
+    const volunteer = await User.findById(volunteerId);
+    if (!volunteer || volunteer.role !== 'volunteer') {
+      return res.status(404).json({ success: false, message: 'Volunteer not found' });
+    }
+
+    request.status = 'assigned';
+    request.assignedVolunteer = volunteer._id;
+    request.assignedAt = new Date();
+    await request.save();
+
+    volunteer.workHistory.push({
+      requestId: request._id,
+      status: 'accepted'
+    });
+    await volunteer.save();
+
+    await Notification.create({
+      userId: request.victimId,
+      type: 'request_accepted',
+      title: 'Volunteer Assigned',
+      message: `Your emergency request has been assigned to ${volunteer.name}`,
+      requestId: request._id
+    });
+
+    const populated = await Request.findById(request._id)
+      .populate('victimId', 'name email phone')
+      .populate('assignedVolunteer', 'name phone email');
+
+    emitRequestUpdated({ id: populated._id, ...populated.toObject(), name: populated.victimId?.name });
+
+    res.json({
+      success: true,
+      data: populated,
+      message: `Assigned to ${volunteer.name}`
+    });
+  } catch (error) {
+    console.error('Admin assign request error:', error);
+    res.status(500).json({ success: false, message: 'Failed to assign request' });
+  }
+});
 
 // Get all volunteers (Admin only)
 router.get('/volunteers', authenticateToken, async (req, res) => {
@@ -134,21 +217,60 @@ router.get('/nearby-requests', authenticateToken, async (req, res) => {
       return res.status(403).json({ success: false, message: 'Volunteer access required' });
     }
 
-    if (!currentUser.location) {
-      return res.status(400).json({ success: false, message: 'Volunteer location not set' });
+    if (!currentUser.location?.coordinates || currentUser.location.coordinates.length !== 2) {
+      const requests = await Request.find({ status: 'pending' })
+        .populate('victimId', 'name email phone')
+        .sort({ createdAt: -1 });
+
+      return res.json({
+        success: true,
+        data: requests,
+        locationFilter: false,
+        message: 'Set your location to filter nearby requests. Showing all pending requests.'
+      });
     }
 
     const { maxDistance = 50000 } = req.query; // 50km default
 
-    const requests = await Request.find({
-      status: 'pending',
-      location: {
-        $near: {
-          $geometry: currentUser.location,
-          $maxDistance: parseInt(maxDistance)
+    // Sort by priority rank: urgent (0), high (1), medium (2), low (3), then by createdAt
+    const requests = await Request.aggregate([
+      {
+        $geoNear: {
+          near: currentUser.location,
+          distanceField: 'distance',
+          maxDistance: parseInt(maxDistance),
+          spherical: true,
+          key: 'location'
         }
-      }
-    }).populate('victimId', 'name phone').sort({ priority: 1, createdAt: 1 });
+      },
+      { $match: { status: 'pending' } },
+      {
+        $addFields: {
+          priorityRank: {
+            $switch: {
+              branches: [
+                { case: { $eq: ['$priority', 'urgent'] }, then: 0 },
+                { case: { $eq: ['$priority', 'high'] }, then: 1 },
+                { case: { $eq: ['$priority', 'medium'] }, then: 2 },
+                { case: { $eq: ['$priority', 'low'] }, then: 3 }
+              ],
+              default: 4
+            }
+          }
+        }
+      },
+      { $sort: { priorityRank: 1, createdAt: 1 } },
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'victimId',
+          foreignField: '_id',
+          as: 'victim'
+        }
+      },
+      { $unwind: { path: '$victim', preserveNullAndEmptyArrays: true } },
+      { $project: { priorityRank: 0 } }
+    ]);
 
     res.json({ success: true, data: requests });
   } catch (error) {
@@ -196,7 +318,12 @@ router.post('/accept-request/:requestId', authenticateToken, async (req, res) =>
       requestId: request._id
     });
 
-    res.json({ success: true, data: request, message: 'Request accepted successfully' });
+    const populated = await Request.findById(request._id)
+      .populate('victimId', 'name email phone')
+      .populate('assignedVolunteer', 'name phone');
+    emitRequestUpdated({ id: populated._id, ...populated.toObject(), name: populated.victimId?.name });
+
+    res.json({ success: true, data: populated, message: 'Request accepted successfully' });
   } catch (error) {
     console.error('Accept request error:', error);
     res.status(500).json({ success: false, message: 'Failed to accept request' });
@@ -246,7 +373,12 @@ router.post('/complete-request/:requestId', authenticateToken, async (req, res) 
       requestId: request._id
     });
 
-    res.json({ success: true, data: request, message: 'Request completed successfully' });
+    const populated = await Request.findById(request._id)
+      .populate('victimId', 'name email phone')
+      .populate('assignedVolunteer', 'name phone');
+    emitRequestUpdated({ id: populated._id, ...populated.toObject(), name: populated.victimId?.name });
+
+    res.json({ success: true, data: populated, message: 'Request completed successfully' });
   } catch (error) {
     console.error('Complete request error:', error);
     res.status(500).json({ success: false, message: 'Failed to complete request' });

@@ -1,5 +1,6 @@
 const express = require('express');
-const mongoose = require('mongoose');
+const http = require('http');
+const path = require('path');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const session = require('express-session');
@@ -7,16 +8,28 @@ const passport = require('./config/passport');
 const requestRoutes = require('./routes/requests');
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
+const geocodeRoutes = require('./routes/geocode');
+const { initSocket } = require('./socket');
 
 // Load environment variables
 dotenv.config();
 
 const app = express();
+const PORT = process.env.PORT || 5000;
+const FRONTEND_URL = process.env.FRONTEND_URL || `http://localhost:${PORT}`;
+const frontendPath = path.join(__dirname, '../frontend');
 
 // Middleware
 app.use(express.json());
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin(origin, callback) {
+    // Allow same-origin and any localhost dev port (Live Server, etc.)
+    if (!origin || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+      callback(null, true);
+    } else {
+      callback(null, FRONTEND_URL);
+    }
+  },
   credentials: true
 }));
 
@@ -39,11 +52,7 @@ app.use(passport.session());
 app.use('/api/requests', requestRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
-
-// Default route
-app.get('/', (req, res) => {
-  res.send('✅ Jeevan Setu Backend is running...');
-});
+app.use('/api/geocode', geocodeRoutes);
 
 // Health check route
 app.get('/health', (req, res) => {
@@ -54,13 +63,42 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Database connection (optional)
-const connectDB = require('./config/db');
-connectDB().catch(err => {
-  console.log('📝 Continuing without database connection...');
+// Serve frontend (same port as API — one command to run everything)
+app.use(express.static(frontendPath));
+
+app.get('/', (req, res) => {
+  res.sendFile(path.join(frontendPath, 'index.html'));
 });
 
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
+// Database connection (optional)
+const connectDB = require('./config/db');
+const seedDefaultUsers = require('./utils/seedUsers');
+
+connectDB()
+  .then(async (conn) => {
+    if (conn) {
+      await seedDefaultUsers();
+    }
+  })
+  .catch(() => {
+    console.log('📝 Continuing without database connection...');
+  });
+
+const server = http.createServer(app);
+initSocket(server);
+
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`❌ Port ${PORT} is already in use. Stop the other process or run: npx kill-port ${PORT}`);
+    process.exit(1);
+  }
+  throw err;
+});
+
+server.listen(PORT, () => {
+  console.log(`🚀 Jeevan Setu running at ${FRONTEND_URL}`);
+  console.log(`   App:     ${FRONTEND_URL}/index.html`);
+  console.log(`   Login:   ${FRONTEND_URL}/login.html`);
+  console.log(`   API:     ${FRONTEND_URL}/api`);
+  console.log(`   Live:    WebSocket enabled for instant request updates`);
 });

@@ -1,6 +1,8 @@
 const express = require('express');
 const Request = require('../models/Request');
 const User = require('../models/User');
+const { resolveLocation } = require('../utils/geocoding');
+const { emitNewRequest, emitRequestUpdated } = require('../socket');
 const router = express.Router();
 
 // GET all requests
@@ -55,12 +57,22 @@ router.get('/:id', async (req, res) => {
 // POST new request
 router.post('/', async (req, res) => {
   try {
-    const { type, location, description, contact, name, priority } = req.body;
-    
-    if (!type || !location || !description) {
+    const { type, location, description, contact, name, priority, coordinates } = req.body;
+
+    const hasCoordinates = coordinates?.lat != null && coordinates?.lng != null;
+    const hasAddress = location && String(location).trim();
+
+    if (!type || !description) {
       return res.status(400).json({
         success: false,
-        message: 'Type, location, and description are required'
+        message: 'Type and description are required'
+      });
+    }
+
+    if (!hasAddress && !hasCoordinates) {
+      return res.status(400).json({
+        success: false,
+        message: 'Location or GPS coordinates are required'
       });
     }
 
@@ -92,8 +104,10 @@ router.post('/', async (req, res) => {
       victimId = tempUser._id;
     }
 
-    // Simple geocoding for location (in production, use proper geocoding service)
-    const coordinates = geocodeLocation(location);
+    const resolved = await resolveLocation({
+      address: hasAddress ? String(location).trim() : undefined,
+      coordinates: hasCoordinates ? coordinates : undefined
+    });
 
     const newRequest = new Request({
       victimId,
@@ -101,9 +115,9 @@ router.post('/', async (req, res) => {
       priority: priority || 'medium',
       location: {
         type: 'Point',
-        coordinates: [coordinates.lng, coordinates.lat]
+        coordinates: [resolved.lng, resolved.lat]
       },
-      address: location,
+      address: resolved.address,
       description,
       contact: contact || 'Not provided',
       status: 'pending'
@@ -113,14 +127,20 @@ router.post('/', async (req, res) => {
     
     // Populate the response
     const populatedRequest = await Request.findById(newRequest._id)
-      .populate('victimId', 'name email');
-    
+      .populate('victimId', 'name email phone');
+
+    const requestPayload = {
+      id: populatedRequest._id,
+      ...populatedRequest.toObject(),
+      geocodingSource: resolved.source,
+      name: populatedRequest.victimId?.name || name || 'Anonymous'
+    };
+
+    emitNewRequest(requestPayload);
+
     res.status(201).json({
       success: true,
-      data: {
-        id: populatedRequest._id,
-        ...populatedRequest.toObject()
-      },
+      data: requestPayload,
       message: 'Request created successfully'
     });
   } catch (error) {
@@ -131,32 +151,6 @@ router.post('/', async (req, res) => {
     });
   }
 });
-
-// Simple geocoding function (in production, use proper geocoding service)
-function geocodeLocation(location) {
-  // Simple coordinate mapping for common locations
-  const locations = {
-    'mumbai': { lat: 19.0760, lng: 72.8777 },
-    'delhi': { lat: 28.6139, lng: 77.2090 },
-    'bangalore': { lat: 12.9716, lng: 77.5946 },
-    'chennai': { lat: 13.0827, lng: 80.2707 },
-    'kolkata': { lat: 22.5726, lng: 88.3639 },
-    'hyderabad': { lat: 17.3850, lng: 78.4867 },
-    'pune': { lat: 18.5204, lng: 73.8567 },
-    'noida': { lat: 28.5355, lng: 77.3910 },
-    'gurgaon': { lat: 28.4595, lng: 77.0266 }
-  };
-
-  const locationLower = location.toLowerCase();
-  for (const [key, coords] of Object.entries(locations)) {
-    if (locationLower.includes(key)) {
-      return coords;
-    }
-  }
-
-  // Default to Delhi if no match
-  return { lat: 28.6139, lng: 77.2090 };
-}
 
 // PUT update request status
 router.put('/:id', async (req, res) => {
@@ -191,6 +185,12 @@ router.put('/:id', async (req, res) => {
         message: 'Request not found'
       });
     }
+
+    emitRequestUpdated({
+      id: request._id,
+      ...request.toObject(),
+      name: request.victimId?.name
+    });
 
     res.json({
       success: true,
